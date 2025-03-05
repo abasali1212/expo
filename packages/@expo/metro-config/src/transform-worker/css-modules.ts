@@ -153,7 +153,6 @@ export function collectCssImports(
             name: dep.url,
             data: {
               asyncType: null,
-              isESMImport: false,
               isOptional: false,
               locs: [
                 {

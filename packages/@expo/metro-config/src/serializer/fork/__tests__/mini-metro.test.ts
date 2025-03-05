@@ -19,7 +19,7 @@ it(`can create a micro Metro graph fixture`, async () => {
         "dependencies": Map {
           "/app/index.js" => {
             "dependencies": Map {
-              "w3xsnP8GGa/kB56APw6c+VOi8X0=" => {
+              "BMmp2IBk5bHEtqZLRWIvwl1M4ck=" => {
                 "absolutePath": "/app/foo.js",
                 "data": {
                   "data": {
@@ -27,8 +27,7 @@ it(`can create a micro Metro graph fixture`, async () => {
                     "exportNames": [
                       "*",
                     ],
-                    "isESMImport": true,
-                    "key": "w3xsnP8GGa/kB56APw6c+VOi8X0=",
+                    "key": "BMmp2IBk5bHEtqZLRWIvwl1M4ck=",
                     "locs": [
                       SourceLocation {
                         "end": Position {

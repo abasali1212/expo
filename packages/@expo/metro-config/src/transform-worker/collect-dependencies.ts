@@ -39,7 +39,6 @@ type AllowOptionalDependencies = boolean | AllowOptionalDependenciesWithOptions;
 
 type ImportDependencyOptions = Readonly<{
   asyncType: AsyncDependencyType;
-  isESMImport: boolean;
   dynamicRequires: DynamicRequiresBehavior;
 }>;
 
@@ -59,20 +58,10 @@ type RequireContextParams = Readonly<{
 }>;
 
 type MutableDependencyData = {
-  /** A locally unique key for this dependency within the current module. */
   key: string;
-  /** If null, then the dependency is synchronous. (ex. `require('foo')`) */
   asyncType: AsyncDependencyType | null;
-  /**
-   * If true, the dependency is declared using an ESM import, e.g.
-   * "import x from 'y'" or "await import('z')". A resolver should typically
-   * use this to assert either "import" or "require" for conditional exports
-   * and subpath imports.
-   */
-  isESMImport: boolean;
   isOptional?: boolean;
   locs: readonly t.SourceLocation[];
-  /** Context for requiring a collection of modules. */
   contextParams?: RequireContextParams;
   exportNames: string[];
   css?: {
@@ -102,7 +91,6 @@ export type State = {
   keepRequireNames: boolean;
   allowOptionalDependencies: AllowOptionalDependencies;
   unstable_allowRequireContext: boolean;
-  unstable_isESMImportAtSource: ((location: t.SourceLocation) => boolean) | null;
   /** Indicates that the pass should only collect dependencies and avoid mutating the AST. This is used for tree shaking passes. */
   collectOnly?: boolean;
 };
@@ -116,7 +104,6 @@ export type Options = Readonly<{
   allowOptionalDependencies: AllowOptionalDependencies;
   dependencyTransformer?: DependencyTransformer;
   unstable_allowRequireContext: boolean;
-  unstable_isESMImportAtSource: ((location: t.SourceLocation) => boolean) | null;
   /** Indicates that the pass should only collect dependencies and avoid mutating the AST. This is used for tree shaking passes. */
   collectOnly?: boolean;
 }>;
@@ -148,7 +135,6 @@ export type DynamicRequiresBehavior = 'throwAtRuntime' | 'reject' | 'warn';
 type ImportQualifier = Readonly<{
   name: string;
   asyncType: AsyncDependencyType | null;
-  isESMImport: boolean;
   optional: boolean;
   contextParams?: RequireContextParams;
   exportNames: string[];
@@ -170,7 +156,6 @@ function collectDependencies<TAst extends t.File>(
     keepRequireNames: options.keepRequireNames,
     allowOptionalDependencies: options.allowOptionalDependencies,
     unstable_allowRequireContext: options.unstable_allowRequireContext,
-    unstable_isESMImportAtSource: options.unstable_isESMImportAtSource ?? null,
     collectOnly: options.collectOnly,
   };
 
@@ -214,35 +199,28 @@ function collectDependencies<TAst extends t.File>(
 
         if (isImport(callee)) {
           processImportCall(path, state, {
-            asyncType: 'async',
-            isESMImport: true,
             dynamicRequires: options.dynamicRequires,
+            asyncType: 'async',
           });
           return;
         }
 
         if (name === '__prefetchImport' && !path.scope.getBinding(name)) {
           processImportCall(path, state, {
-            asyncType: 'prefetch',
-            isESMImport: true,
             dynamicRequires: options.dynamicRequires,
+            asyncType: 'prefetch',
           });
           return;
         }
 
-        // Match `require.context`
         if (
-          // Feature gate, defaults to `false`.
           state.unstable_allowRequireContext &&
           callee.type === 'MemberExpression' &&
-          // `require`
           callee.object.type === 'Identifier' &&
           callee.object.name === 'require' &&
-          // `context`
           callee.property.type === 'Identifier' &&
           callee.property.name === 'context' &&
           !callee.computed &&
-          // Ensure `require` refers to the global and not something else.
           !path.scope.getBinding('require')
         ) {
           processRequireContextCall(path, state);
@@ -251,17 +229,13 @@ function collectDependencies<TAst extends t.File>(
           return;
         }
 
-        // Match `require.resolveWeak`
         if (
           callee.type === 'MemberExpression' &&
-          // `require`
           callee.object.type === 'Identifier' &&
           callee.object.name === 'require' &&
-          // `resolveWeak`
           callee.property.type === 'Identifier' &&
           callee.property.name === 'resolveWeak' &&
           !callee.computed &&
-          // Ensure `require` refers to the global and not something else.
           !path.scope.getBinding('require')
         ) {
           processResolveWeakCall(path, state);
@@ -298,12 +272,8 @@ function collectDependencies<TAst extends t.File>(
           !path.scope.getBinding('require')
         ) {
           processImportCall(path, state, {
-            asyncType: 'maybeSync',
-            // Treat require.unstable_importMaybeSync as an ESM import, like its
-            // async "await import()" counterpart. Subject to change while
-            // unstable_.
-            isESMImport: true,
             dynamicRequires: options.dynamicRequires,
+            asyncType: 'maybeSync',
           });
           visited.add(path.node);
           return;
@@ -353,7 +323,6 @@ function collectDependencies<TAst extends t.File>(
   };
 }
 
-/** Extract args passed to the `require.context` method. */
 function getRequireContextArgs(path: NodePath<CallExpression>): [string, RequireContextParams] {
   const args = path.get('arguments');
 
@@ -372,7 +341,6 @@ function getRequireContextArgs(path: NodePath<CallExpression>): [string, Require
     }
   }
 
-  // Default to requiring through all directories.
   let recursive: boolean = true;
   if (args.length > 1) {
     const result = args[1].evaluate() as { confident: boolean; value: any; deopt?: any };
@@ -386,15 +354,11 @@ function getRequireContextArgs(path: NodePath<CallExpression>): [string, Require
     }
   }
 
-  // Default to all files.
   let filter: ContextFilter = { pattern: '.*', flags: '' };
   if (args.length > 2) {
-    // evaluate() to check for undefined (because it's technically a scope lookup)
-    // but check the AST for the regex literal, since evaluate() doesn't do regex.
     const result = args[2].evaluate();
     const argNode = args[2].node;
     if (argNode.type === 'RegExpLiteral') {
-      // TODO: Handle `new RegExp(...)` -- `argNode.type === 'NewExpression'`
       filter = {
         pattern: argNode.pattern,
         flags: argNode.flags || '',
@@ -407,7 +371,6 @@ function getRequireContextArgs(path: NodePath<CallExpression>): [string, Require
     }
   }
 
-  // Default to `sync`.
   let mode: ContextMode = 'sync';
   if (args.length > 3) {
     const result = args[3].evaluate() as { confident: boolean; value: any; deopt?: any };
@@ -454,12 +417,9 @@ function processRequireContextCall(path: NodePath<CallExpression>, state: State)
   const dep = registerDependency(
     state,
     {
-      // We basically want to "import" every file in a folder and then filter them out with the given `filter` RegExp.
       name: directory,
-      // Capture the matching context
       contextParams,
       asyncType: null,
-      isESMImport: false,
       optional: isOptionalDependency(directory, path, state),
       exportNames: ['*'],
     },
@@ -487,7 +447,6 @@ function processResolveWeakCall(path: NodePath<CallExpression>, state: State): v
     {
       name,
       asyncType: 'weak',
-      isESMImport: false,
       optional: isOptionalDependency(name, path, state),
       exportNames: ['*'],
     },
@@ -517,7 +476,6 @@ function processResolveWorkerCallWithName(name: string, path: NodePath<any>, sta
     {
       name,
       asyncType: 'worker',
-      isESMImport: false,
       optional: isOptionalDependency(name, path, state),
       exportNames: ['*'],
     },
@@ -539,7 +497,6 @@ function processResolveWorkerCallWithName(name: string, path: NodePath<any>, sta
       {
         name: nullthrows(state.asyncRequireModulePathStringLiteral).value,
         asyncType: null,
-        isESMImport: false,
         optional: false,
         exportNames: ['*'],
       },
@@ -587,7 +544,6 @@ function collectImports(path: NodePath<any>, state: State): void {
       {
         name: path.node.source.value,
         asyncType: null,
-        isESMImport: true,
         optional: false,
         exportNames: getExportNamesFromPath(path),
       },
@@ -643,7 +599,6 @@ function processImportCall(
     {
       name,
       asyncType: options.asyncType,
-      isESMImport: options.isESMImport,
       optional: isOptionalDependency(name, path, state),
       exportNames: ['*'],
     },
@@ -691,21 +646,11 @@ function processRequireCall(path: NodePath<CallExpression>, state: State): void 
     return;
   }
 
-  let isESMImport = false;
-  if (state.unstable_isESMImportAtSource) {
-    const isImport = state.unstable_isESMImportAtSource;
-    const loc = getNearestLocFromPath(path);
-    if (loc) {
-      isESMImport = isImport(loc);
-    }
-  }
-
   const dep = registerDependency(
     state,
     {
       name,
       asyncType: null,
-      isESMImport,
       optional: isOptionalDependency(name, path, state),
       exportNames: ['*'],
     },
@@ -741,7 +686,6 @@ function registerDependency(
 function isOptionalDependency(name: string, path: NodePath<any>, state: State): boolean {
   const { allowOptionalDependencies } = state;
 
-  // The async require module is a 'built-in'. Resolving should never fail -> treat it as non-optional.
   if (name === state.asyncRequireModulePathStringLiteral?.value) {
     return false;
   }
@@ -755,7 +699,6 @@ function isOptionalDependency(name: string, path: NodePath<any>, state: State): 
     return false;
   }
 
-  // Valid statement stack for single-level try-block: expressionStatement -> blockStatement -> tryStatement
   let sCount = 0;
   let p: NodePath<any> | NodePath<t.Node> | null = path;
   while (p && sCount < 3) {
@@ -788,23 +731,6 @@ function getModuleNameFromCallArgs(path: NodePath<CallExpression>): string | nul
   return null;
 }
 
-export class InvalidRequireCallError extends Error {
-  constructor({ node }: NodePath<any>, message?: string) {
-    const line = node.loc && node.loc.start && node.loc.start.line;
-
-    super(
-      [`Invalid call at line ${line || '<unknown>'}: ${generate(node).code}`, message]
-        .filter(Boolean)
-        .join('\n')
-    );
-  }
-}
-
-/**
- * Produces a Babel template that will throw at runtime when the require call
- * is reached. This makes dynamic require errors catchable by libraries that
- * want to use them.
- */
 const dynamicRequireErrorTemplate = template.expression(`
   (function(line) {
     throw new Error(
@@ -813,10 +739,6 @@ const dynamicRequireErrorTemplate = template.expression(`
   })(LINE)
 `);
 
-/**
- * Produces a Babel template that transforms an "import(...)" call into a
- * "require(...)" call to the asyncRequire specified.
- */
 const makeAsyncRequireTemplate = template.expression(`
   require(ASYNC_REQUIRE_MODULE_PATH)(MODULE_ID, DEPENDENCY_MAP.paths)
 `);
@@ -857,7 +779,6 @@ const DefaultDependencyTransformer: DependencyTransformer = {
   ): void {
     const moduleIDExpression = createModuleIDExpression(dependency, state);
     path.node.arguments = [moduleIDExpression];
-    // Always add the debug name argument last
     if (state.keepRequireNames || dependency.isOptional) {
       path.node.arguments.push(t.stringLiteral(dependency.name));
     }
@@ -930,39 +851,16 @@ function createModuleNameLiteral(dependency: InternalDependency) {
   return t.stringLiteral(dependency.name);
 }
 
-/**
- * Given an import qualifier, return a key used to register the dependency.
- * Attributes can be appended to distinguish various combinations that would
- * otherwise be considered the same dependency edge.
- *
- * For example, the following dependencies would collapse into a single edge
- * if they simply utilized the `name` property:
- *
- * ```
- * require('./foo');
- * import foo from './foo'
- * await import('./foo')
- * require.context('./foo');
- * require.context('./foo', true, /something/);
- * require.context('./foo', false, /something/);
- * require.context('./foo', false, /something/, 'lazy');
- * ```
- *
- * This method should be utilized by `registerDependency`.
- */
 function getKeyForDependency(qualifier: ImportQualifier): string {
-  const { asyncType, contextParams, isESMImport, name } = qualifier;
+  let key = qualifier.name;
 
-  let key = [name, isESMImport ? 'import' : 'require'].join('\0');
-  if (asyncType != null) {
-    key += '\0' + asyncType;
+  const { asyncType } = qualifier;
+  if (asyncType) {
+    key += ['', asyncType].join('\0');
   }
 
-  // Add extra qualifiers when using `require.context` to prevent collisions.
+  const { contextParams } = qualifier;
   if (contextParams) {
-    // NOTE(EvanBacon): Keep this synchronized with `RequireContextParams`, if any other properties are added
-    // then this key algorithm should be updated to account for those properties.
-    // Example: `./directory__true__/foobar/m__lazy`
     key += [
       '',
       'context',
@@ -987,11 +885,10 @@ class DependencyRegistry {
       const newDependency: MutableInternalDependency = {
         name: qualifier.name,
         asyncType: qualifier.asyncType,
-        isESMImport: qualifier.isESMImport,
+        exportNames: qualifier.exportNames,
         locs: [],
         index: this._dependencies.size,
         key: crypto.createHash('sha1').update(key).digest('base64'),
-        exportNames: qualifier.exportNames,
       };
 
       if (qualifier.optional) {
@@ -1023,6 +920,18 @@ class DependencyRegistry {
 
   getDependencies(): InternalDependency[] {
     return Array.from(this._dependencies.values());
+  }
+}
+
+export class InvalidRequireCallError extends Error {
+  constructor({ node }: NodePath<any>, message?: string) {
+    const line = node.loc && node.loc.start && node.loc.start.line;
+
+    super(
+      [`Invalid call at line ${line || '<unknown>'}: ${generate(node).code}`, message]
+        .filter(Boolean)
+        .join('\n')
+    );
   }
 }
 

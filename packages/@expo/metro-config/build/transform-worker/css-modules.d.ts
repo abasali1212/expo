@@ -20,7 +20,6 @@ export declare function transformCssModuleWeb(props: {
         data: Readonly<{
             key: string;
             asyncType: import("./collect-dependencies").AsyncDependencyType | null;
-            isESMImport: boolean;
             isOptional?: boolean | undefined;
             locs: readonly import("@babel/types").SourceLocation[];
             contextParams?: Readonly<{
@@ -62,7 +61,6 @@ export declare function collectCssImports(filename: string, originalCode: string
         data: Readonly<{
             key: string;
             asyncType: import("./collect-dependencies").AsyncDependencyType | null;
-            isESMImport: boolean;
             isOptional?: boolean | undefined;
             locs: readonly import("@babel/types").SourceLocation[];
             contextParams?: Readonly<{

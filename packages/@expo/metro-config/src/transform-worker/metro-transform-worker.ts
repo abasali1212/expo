@@ -17,10 +17,6 @@ import type { NodePath } from '@babel/traverse';
 import * as t from '@babel/types';
 import JsFileWrapping from 'metro/src/ModuleGraph/worker/JsFileWrapping';
 import generateImportNames from 'metro/src/ModuleGraph/worker/generateImportNames';
-import {
-  importLocationsPlugin,
-  locToKey,
-} from 'metro/src/ModuleGraph/worker/importLocationsPlugin';
 import type { BabelTransformer, BabelTransformerArgs } from 'metro-babel-transformer';
 import { stableHash } from 'metro-cache';
 import getMetroCacheKey from 'metro-cache-key';
@@ -68,7 +64,6 @@ interface JSFile extends BaseFile {
   readonly ast?: ParseResult | t.File | null;
   readonly type: JSFileType;
   readonly functionMap: FBSourceFunctionMap | null;
-  readonly unstable_importDeclarationLocs?: ReadonlySet<string> | null;
   readonly reactServerReference?: string;
   readonly reactClientReference?: string;
   readonly expoDomComponentReference?: string;
@@ -381,7 +376,6 @@ async function transformJS(
     wrappedAst = JsFileWrapping.wrapPolyfill(ast);
   } else {
     try {
-      const importDeclarationLocs = file.unstable_importDeclarationLocs ?? null;
       collectDependenciesOptions = {
         asyncRequireModulePath: config.asyncRequireModulePath,
         dependencyTransformer:
@@ -398,10 +392,6 @@ async function transformJS(
         allowOptionalDependencies: config.allowOptionalDependencies,
         dependencyMapName: config.unstable_dependencyMapReservedName,
         unstable_allowRequireContext: config.unstable_allowRequireContext,
-        unstable_isESMImportAtSource:
-          importDeclarationLocs != null
-            ? (loc: t.SourceLocation) => importDeclarationLocs.has(locToKey(loc))
-            : null,
         // If tree shaking is enabled, then preserve the original require calls.
         // This ensures require.context calls are not broken.
         collectOnly: optimize === true,
@@ -603,12 +593,8 @@ async function transformJSWithBabel(
 
   // TODO: Add a babel plugin which returns if the module has commonjs, and if so, disable all tree shaking optimizations early.
   const transformResult = await transformer.transform(
-    getBabelTransformArgs(file, context, [
-      // functionMapBabelPlugin populates metadata.metro.functionMap
-      functionMapBabelPlugin,
-      // importLocationsPlugin populates metadata.metro.unstable_importDeclarationLocs
-      importLocationsPlugin,
-    ])
+    // functionMapBabelPlugin populates metadata.metro.functionMap
+    getBabelTransformArgs(file, context, [functionMapBabelPlugin])
   );
 
   const jsFile: JSFile = {
@@ -619,8 +605,6 @@ async function transformJSWithBabel(
       // Fallback to deprecated explicitly-generated `functionMap`
       transformResult.functionMap ??
       null,
-    unstable_importDeclarationLocs:
-      transformResult?.metadata?.metro?.unstable_importDeclarationLocs,
     hasCjsExports: transformResult.metadata?.hasCjsExports,
     reactServerReference: transformResult.metadata?.reactServerReference,
     reactClientReference: transformResult.metadata?.reactClientReference,

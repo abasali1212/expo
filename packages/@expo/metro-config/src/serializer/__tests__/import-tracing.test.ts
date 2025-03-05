@@ -44,8 +44,7 @@ console.log(run);
         data: {
           asyncType: null,
           exportNames: ['*'],
-          isESMImport: true,
-          key: '5fes4Bo7aGIJwD57FkocPfA5U68=',
+          key: '7Edr0s96f6qkXN0z9TBRGKmmmmQ=',
           locs: [AnyPosition, AnyPosition],
         },
         name: './b',
