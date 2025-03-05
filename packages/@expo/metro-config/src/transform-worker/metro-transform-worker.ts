@@ -64,6 +64,9 @@ interface JSFile extends BaseFile {
   readonly ast?: ParseResult | t.File | null;
   readonly type: JSFileType;
   readonly functionMap: FBSourceFunctionMap | null;
+  // NOTE(cedric): this is part of exposing `isESMImport` to the resolver, which is currently not implemented due to conflicts with tree shaking.
+  // See: https://github.com/facebook/metro/commit/d187fb20b3b1e443080f2c9c46e08af46f0c9d2f
+  readonly unstable_importDeclarationLocs?: ReadonlySet<string> | null;
   readonly reactServerReference?: string;
   readonly reactClientReference?: string;
   readonly expoDomComponentReference?: string;

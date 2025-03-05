@@ -39,6 +39,9 @@ type AllowOptionalDependencies = boolean | AllowOptionalDependenciesWithOptions;
 
 type ImportDependencyOptions = Readonly<{
   asyncType: AsyncDependencyType;
+  // NOTE(cedric): this is part of the ESM resolver functionality which is not implmented due to conflicts with tree shaking.
+  // See: https://github.com/facebook/metro/commit/d187fb20b3b1e443080f2c9c46e08af46f0c9d2f
+  isESMImport: boolean;
   dynamicRequires: DynamicRequiresBehavior;
 }>;
 
@@ -60,6 +63,9 @@ type RequireContextParams = Readonly<{
 type MutableDependencyData = {
   key: string;
   asyncType: AsyncDependencyType | null;
+  // NOTE(cedric): this is part of the ESM resolver functionality which is not implmented due to conflicts with tree shaking.
+  // See: https://github.com/facebook/metro/commit/d187fb20b3b1e443080f2c9c46e08af46f0c9d2f
+  isESMImport: boolean;
   isOptional?: boolean;
   locs: readonly t.SourceLocation[];
   contextParams?: RequireContextParams;
@@ -135,6 +141,9 @@ export type DynamicRequiresBehavior = 'throwAtRuntime' | 'reject' | 'warn';
 type ImportQualifier = Readonly<{
   name: string;
   asyncType: AsyncDependencyType | null;
+  // NOTE(cedric): this is part of the ESM resolver functionality which is not implmented due to conflicts with tree shaking.
+  // See: https://github.com/facebook/metro/commit/d187fb20b3b1e443080f2c9c46e08af46f0c9d2f
+  isESMImport: boolean;
   optional: boolean;
   contextParams?: RequireContextParams;
   exportNames: string[];
@@ -199,16 +208,18 @@ function collectDependencies<TAst extends t.File>(
 
         if (isImport(callee)) {
           processImportCall(path, state, {
-            dynamicRequires: options.dynamicRequires,
             asyncType: 'async',
+            isESMImport: true,
+            dynamicRequires: options.dynamicRequires,
           });
           return;
         }
 
         if (name === '__prefetchImport' && !path.scope.getBinding(name)) {
           processImportCall(path, state, {
-            dynamicRequires: options.dynamicRequires,
             asyncType: 'prefetch',
+            isESMImport: true,
+            dynamicRequires: options.dynamicRequires,
           });
           return;
         }
@@ -272,6 +283,10 @@ function collectDependencies<TAst extends t.File>(
           !path.scope.getBinding('require')
         ) {
           processImportCall(path, state, {
+            // Treat require.unstable_importMaybeSync as an ESM import, like its
+            // async "await import()" counterpart. Subject to change while
+            // unstable_.
+            isESMImport: true,
             dynamicRequires: options.dynamicRequires,
             asyncType: 'maybeSync',
           });
@@ -420,6 +435,7 @@ function processRequireContextCall(path: NodePath<CallExpression>, state: State)
       name: directory,
       contextParams,
       asyncType: null,
+      isESMImport: false,
       optional: isOptionalDependency(directory, path, state),
       exportNames: ['*'],
     },
@@ -447,6 +463,7 @@ function processResolveWeakCall(path: NodePath<CallExpression>, state: State): v
     {
       name,
       asyncType: 'weak',
+      isESMImport: false,
       optional: isOptionalDependency(name, path, state),
       exportNames: ['*'],
     },
@@ -476,6 +493,7 @@ function processResolveWorkerCallWithName(name: string, path: NodePath<any>, sta
     {
       name,
       asyncType: 'worker',
+      isESMImport: false,
       optional: isOptionalDependency(name, path, state),
       exportNames: ['*'],
     },
@@ -497,6 +515,7 @@ function processResolveWorkerCallWithName(name: string, path: NodePath<any>, sta
       {
         name: nullthrows(state.asyncRequireModulePathStringLiteral).value,
         asyncType: null,
+        isESMImport: false,
         optional: false,
         exportNames: ['*'],
       },
@@ -544,6 +563,7 @@ function collectImports(path: NodePath<any>, state: State): void {
       {
         name: path.node.source.value,
         asyncType: null,
+        isESMImport: true,
         optional: false,
         exportNames: getExportNamesFromPath(path),
       },
@@ -599,6 +619,7 @@ function processImportCall(
     {
       name,
       asyncType: options.asyncType,
+      isESMImport: true,
       optional: isOptionalDependency(name, path, state),
       exportNames: ['*'],
     },
@@ -651,6 +672,7 @@ function processRequireCall(path: NodePath<CallExpression>, state: State): void 
     {
       name,
       asyncType: null,
+      isESMImport: false,
       optional: isOptionalDependency(name, path, state),
       exportNames: ['*'],
     },
@@ -885,6 +907,7 @@ class DependencyRegistry {
       const newDependency: MutableInternalDependency = {
         name: qualifier.name,
         asyncType: qualifier.asyncType,
+        isESMImport: qualifier.isESMImport,
         exportNames: qualifier.exportNames,
         locs: [],
         index: this._dependencies.size,

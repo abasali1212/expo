@@ -23,6 +23,7 @@ type RequireContextParams = Readonly<{
 type MutableDependencyData = {
     key: string;
     asyncType: AsyncDependencyType | null;
+    isESMImport: boolean;
     isOptional?: boolean;
     locs: readonly t.SourceLocation[];
     contextParams?: RequireContextParams;
@@ -81,6 +82,7 @@ export type DynamicRequiresBehavior = 'throwAtRuntime' | 'reject' | 'warn';
 type ImportQualifier = Readonly<{
     name: string;
     asyncType: AsyncDependencyType | null;
+    isESMImport: boolean;
     optional: boolean;
     contextParams?: RequireContextParams;
     exportNames: string[];

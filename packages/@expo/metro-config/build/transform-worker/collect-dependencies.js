@@ -94,15 +94,17 @@ function collectDependencies(ast, options) {
             const name = callee.type === 'Identifier' ? callee.name : null;
             if ((0, types_1.isImport)(callee)) {
                 processImportCall(path, state, {
-                    dynamicRequires: options.dynamicRequires,
                     asyncType: 'async',
+                    isESMImport: true,
+                    dynamicRequires: options.dynamicRequires,
                 });
                 return;
             }
             if (name === '__prefetchImport' && !path.scope.getBinding(name)) {
                 processImportCall(path, state, {
-                    dynamicRequires: options.dynamicRequires,
                     asyncType: 'prefetch',
+                    isESMImport: true,
+                    dynamicRequires: options.dynamicRequires,
                 });
                 return;
             }
@@ -153,6 +155,10 @@ function collectDependencies(ast, options) {
                 // Ensure `require` refers to the global and not something else.
                 !path.scope.getBinding('require')) {
                 processImportCall(path, state, {
+                    // Treat require.unstable_importMaybeSync as an ESM import, like its
+                    // async "await import()" counterpart. Subject to change while
+                    // unstable_.
+                    isESMImport: true,
                     dynamicRequires: options.dynamicRequires,
                     asyncType: 'maybeSync',
                 });
@@ -266,6 +272,7 @@ function processRequireContextCall(path, state) {
         name: directory,
         contextParams,
         asyncType: null,
+        isESMImport: false,
         optional: isOptionalDependency(directory, path, state),
         exportNames: ['*'],
     }, path);
@@ -285,6 +292,7 @@ function processResolveWeakCall(path, state) {
     const dependency = registerDependency(state, {
         name,
         asyncType: 'weak',
+        isESMImport: false,
         optional: isOptionalDependency(name, path, state),
         exportNames: ['*'],
     }, path);
@@ -305,6 +313,7 @@ function processResolveWorkerCallWithName(name, path, state) {
     const dependency = registerDependency(state, {
         name,
         asyncType: 'worker',
+        isESMImport: false,
         optional: isOptionalDependency(name, path, state),
         exportNames: ['*'],
     }, path);
@@ -320,6 +329,7 @@ function processResolveWorkerCallWithName(name, path, state) {
         registerDependency(state, {
             name: nullthrows(state.asyncRequireModulePathStringLiteral).value,
             asyncType: null,
+            isESMImport: false,
             optional: false,
             exportNames: ['*'],
         }, path);
@@ -364,6 +374,7 @@ function collectImports(path, state) {
         registerDependency(state, {
             name: path.node.source.value,
             asyncType: null,
+            isESMImport: true,
             optional: false,
             exportNames: getExportNamesFromPath(path),
         }, path);
@@ -399,6 +410,7 @@ function processImportCall(path, state, options) {
     const dep = registerDependency(state, {
         name,
         asyncType: options.asyncType,
+        isESMImport: true,
         optional: isOptionalDependency(name, path, state),
         exportNames: ['*'],
     }, path);
@@ -440,6 +452,7 @@ function processRequireCall(path, state) {
     const dep = registerDependency(state, {
         name,
         asyncType: null,
+        isESMImport: false,
         optional: isOptionalDependency(name, path, state),
         exportNames: ['*'],
     }, path);
@@ -611,6 +624,7 @@ class DependencyRegistry {
             const newDependency = {
                 name: qualifier.name,
                 asyncType: qualifier.asyncType,
+                isESMImport: qualifier.isESMImport,
                 exportNames: qualifier.exportNames,
                 locs: [],
                 index: this._dependencies.size,
